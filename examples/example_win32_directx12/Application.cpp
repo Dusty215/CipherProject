@@ -29,7 +29,8 @@ namespace CipherP {
     void Ceaser_Cipher(const char* text, int shift);
     void SDES_Cipher(const char* text, const char* key, bool decrypt); // "amply simplified DES"
     void MorseCode_Cipher(const char* text);
-
+    static bool g_ShowBinary = false;
+    static bool g_CopyOnEncrypt = false;
     // Helper for tooltips in ImGui
     static void HelpMarker(const char* desc)
     {
@@ -84,42 +85,72 @@ namespace CipherP {
     // ------------------------------------------------------------------------------------
     // RenderUI: the main ImGui function
     // ------------------------------------------------------------------------------------
-    void RenderUI()
+// ---------------------------------------------------------------------------
+//  Helpers for the three-pane layout
+// ---------------------------------------------------------------------------
+    static void BeginFixedPane(const char* id, float width)
     {
+        // A bordered child with fixed width, full remaining height
+        ImGui::BeginChild(id, ImVec2(width, 0), true,
+            ImGuiWindowFlags_None);
+    }
+
+    static void EndPane()
+    {
+        ImGui::EndChild();
+    }
+
+    // ---------------------------------------------------------------------------
+    //  RenderUI  –  COMPLETE REPLACEMENT
+    // ---------------------------------------------------------------------------
+    void CipherP::RenderUI()
+    {
+        //-----------------------------------------------------------------
+     // 0.  Globals / persistent state
+     //-----------------------------------------------------------------
+        static char  Input[256] = "";
+        static char  SKey[256] = "";
+        static char  EKey[256] = "";
+        static bool  doDecrypt = false;
+        static int   selectedCipher = -1;           // -1=none  0=Cae 1=DES 2=Morse
+        static bool copyOnEncrypt = false;
+        static bool  ShowResults = false;
+
+        static char  inputFilePath[MAX_PATH] = "";
+        static char  outputFilePath[MAX_PATH] = "";
+        static std::string fileContent;
+        static bool  fileLoaded = false;
+        static bool  fileProcessed = false;
+
+        // ---- error-popup state -------------------------------------------------
+        static bool         wantError = false;     // show in next frame?
+        static std::string  errorText;
+
+        //-----------------------------------------------------------------
+        // 1.  Main window & docking
+        //-----------------------------------------------------------------
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
-        ImGuiStyle& style = ImGui::GetStyle();
-
-        // Buffers for user input
-        static char Input[256] = "";  // Plain/cipher text
-        static char SKey[256] = "";  // Single key (for Caesar, Morse)
-        static char EKey[256] = "";  // 10-bit key for S-DES
-        static char DKey[256] = "";  // Could be same as EKey if you want
-        static bool ShowResults = false;
-        static int selectedCipher = -1;  // 0=Caesar, 1=S-DES, 2=Morse
-        // We also add a toggle for encrypt/decrypt if you want
-        static bool doDecrypt = false;
-
-        bool cipherCaesar = (selectedCipher == 0);
-        bool cipherSDES = (selectedCipher == 1);
-        bool cipherMorse = (selectedCipher == 2);
-        static bool showSettings = false;
-        static bool showAbout = false;
-        static bool confirmExit = false;
-
-        static char inputFilePath[MAX_PATH] = "";
-        static char outputFilePath[MAX_PATH] = "";
-        static std::string fileContent;          // raw bytes read from file
-        static bool fileLoaded = false;
-        static bool fileProcessed = false;
-
-        // Main window
-        ImGui::SetNextWindowSize(ImVec2(800, 600));
+        ImGui::SetNextWindowSize(ImVec2(1000, 640), ImGuiCond_FirstUseEver);
         ImGui::Begin("Encryption Algorithm", nullptr,
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar);
 
-        // Main menu bar
-        if (ImGui::BeginMainMenuBar())
+        // ---- if previous frame queued an error → open popup now ---------------
+        if (wantError) {
+            ImGui::OpenPopup("Input Error");
+            wantError = false;                 // reset
+        }
+
+        //-----------------------------------------------------------------
+        // 2.  Menu bar  
+        //-----------------------------------------------------------------
+        /* … keep your Options / Help menu code exactly as before … */
+        // ---------------- Menu Bar ------------------
+        if (ImGui::BeginMenuBar())
         {
+            // ------------ Options --------------------------------------------------
+            static bool showSettings = false;
+            static bool confirmExit = false;
+
             if (ImGui::BeginMenu("Options"))
             {
                 if (ImGui::MenuItem("Settings")) showSettings = true;
@@ -127,198 +158,162 @@ namespace CipherP {
                 ImGui::EndMenu();
             }
 
+            // Settings popup
+            if (showSettings)
+            {
+                ImGui::Begin("Settings", &showSettings);
+                ImGui::Text("Preferences");
+                ImGui::Checkbox("Show binary format for S-DES", &g_ShowBinary);
+                ImGui::Checkbox("Auto-copy result on Encrypt", &g_CopyOnEncrypt);
+                ImGui::End();
+            }
+
+            // Exit confirmation
+            if (confirmExit)
+            {
+                ImGui::OpenPopup("Confirm Exit?");
+                confirmExit = false;
+            }
+            if (ImGui::BeginPopupModal("Confirm Exit?", NULL,
+                ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::Text("Are you sure you want to exit?");
+                ImGui::Separator();
+                if (ImGui::Button("Yes", ImVec2(120, 0)))  exit(0);
+                ImGui::SameLine();
+                if (ImGui::Button("No", ImVec2(120, 0)))  ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+
+            // ------------ Help -----------------------------------------------------
             if (ImGui::BeginMenu("Help"))
             {
                 if (ImGui::MenuItem("Documentation"))
-                {
-                    // Directly open ImGui documentation
                     ShellExecuteA(0, 0, "https://github.com/ocornut/imgui", 0, 0, SW_SHOW);
-                }
 
                 if (ImGui::MenuItem("About"))
-                {
-                    // Directly open your site
-                    ShellExecuteA(0, 0, "https://zainalamri.dev", 0, 0, SW_SHOW);
-                }
+                    ShellExecuteA(0, 0, "https://www.taibahu.edu.sa/Pages/AR/Sector/SectorPage.aspx?ID=155", 0, 0, SW_SHOW);
 
                 ImGui::EndMenu();
             }
 
-            ImGui::EndMainMenuBar();
+            ImGui::EndMenuBar();
         }
+        //-----------------------------------------------------------------
+        // 3.  THREE-PANE LAYOUT
+        //-----------------------------------------------------------------
 
+        //--------------------  (A) TEXT PANE  -----------------------------------
+        BeginFixedPane("##TextPane", 380.f);
 
-        if (showSettings)
-        {
-            ImGui::Begin("Settings", &showSettings);
+        ImGui::Text("Enter text to encrypt / decrypt");
+        ImGui::InputTextMultiline("##txt", Input, IM_ARRAYSIZE(Input),
+            ImVec2(-FLT_MIN, 140));
+        ImGui::Separator();
+        ImGui::Checkbox("Decrypt mode", &doDecrypt); ImGui::Separator();
 
-            static bool showBinary = true;
-            static bool copyOnEncrypt = false;
-
-            ImGui::Text("Preferences:");
-            ImGui::Checkbox("Show binary format for S-DES", &showBinary);
-            ImGui::Checkbox("Auto-copy result on Encrypt", &copyOnEncrypt);
-            ImGui::Spacing();
-            ImGui::TextDisabled("Note: These are placeholder settings.");
-
-            ImGui::End();
-        }
-        if (confirmExit)
-        {
-            ImGui::OpenPopup("Confirm Exit?");
-            confirmExit = false;
-        }
-
-        if (ImGui::BeginPopupModal("Confirm Exit?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::Text("Are you sure you want to exit?");
-            ImGui::Separator();
-
-            if (ImGui::Button("Yes", ImVec2(120, 0))) {
-                exit(0);  // or use PostQuitMessage(0); on Windows
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("No", ImVec2(120, 0))) {
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::EndPopup();
-        }
-        if (ImGui::BeginPopup("OpenDocumentation"))
-        {
-            ImGui::Text("Open ImGui Documentation?");
-            if (ImGui::Button("Open")) {
-                ShellExecuteA(0, 0, "https://github.com/ocornut/imgui", 0, 0, SW_SHOW);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel")) {
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
-        }
-
-        // About
-        if (showAbout)
-        {
-            ImGui::Begin("About", &showAbout, ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::Text("Encryption UI Project");
-            ImGui::Text("Made by Zain Alamri");
-            ImGui::Text("For more info, visit:");
-            if (ImGui::Button("zainalamri.dev")) {
-                ShellExecuteA(0, 0, "https://zainalamri.dev", 0, 0, SW_SHOW);
-            }
-            ImGui::End();
-        }
-        // Cipher selection
-        if (ImGui::TreeNodeEx("Choose preferred cipher algorithm", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            ImGui::Spacing();
-            ImGui::SeparatorText("Substitution Ciphers");
-
-            // Caesar
-            if (ImGui::Checkbox("Caesar Cipher", &cipherCaesar))
-                selectedCipher = cipherCaesar ? 0 : -1;
-
-            ImGui::SameLine();
-            HelpMarker("Classic Caesar cipher, shifting letters by a fixed integer.");
-
-            // Morse
-            ImGui::SameLine();
-            if (ImGui::Checkbox("Morse Code Cipher", &cipherMorse))
-                selectedCipher = cipherMorse ? 2 : -1;
-
-            ImGui::SameLine();
-            HelpMarker("Morse code encodes letters as dots/dashes. Example only (encode-only).");
-
-            ImGui::SeparatorText("Symmetric-Key Ciphers (Simplified)");
-
-            // S-DES
-            if (ImGui::Checkbox("S-DES (Simplified DES)", &cipherSDES))
-                selectedCipher = cipherSDES ? 1 : -1;
-
-            ImGui::SameLine();
-            HelpMarker("A teaching cipher illustrating DES steps on 8-bit blocks with a 10-bit key.");
-
-            ImGui::SeparatorText("Asymmetric-Key Ciphers");
-            // Placeholder for RSA or others
-
-            ImGui::TreePop();
-        }
-
-        // Text input
-        ImGui::Text("Enter plain/cipher text:");
-        ImGui::SetNextItemWidth(400);
-        ImGui::InputText("##enter_text", Input, IM_ARRAYSIZE(Input));
-
-        // A toggle for encrypt vs decrypt (especially for S-DES)
-        ImGui::Checkbox("Decrypt Mode?", &doDecrypt);
-
-        // Key inputs
+        // key widgets
         if (selectedCipher == 0)
-        {
-            // Caesar
-            ImGui::Text("Enter numeric key (shift):");
-            ImGui::SetNextItemWidth(150);
-            ImGui::InputText("##caesar_key", SKey, IM_ARRAYSIZE(SKey));
-        }
+            ImGui::InputText("Shift", SKey, IM_ARRAYSIZE(SKey),
+                ImGuiInputTextFlags_CharsDecimal);
         else if (selectedCipher == 1)
-        {
-            // S-DES
-            ImGui::Text("Enter 10-bit key (binary, e.g. '1010000010')");
-            ImGui::SetNextItemWidth(150);
-            ImGui::InputText("##sdes_key1", EKey, IM_ARRAYSIZE(EKey));
+            ImGui::InputText("10-bit key", EKey, IM_ARRAYSIZE(EKey));
 
-            
-            
-        }
-        else if (selectedCipher == 2)
+        // ----- RUN-ON-TEXT button with validation ------------------------------
+        if (ImGui::Button("Run on text"))
         {
-            // Morse
-         
-        }
+            errorText.clear();
 
-        // Button to run
-        if (ImGui::Button("Encrypt/Decrypt"))
-        {
-            ShowResults = true;
-            output.clear();
+            if (selectedCipher == -1)
+                errorText = "Please choose a cipher first.";
+            else if (Input[0] == '\0')
+                errorText = "Input text is empty.";
+            else if (selectedCipher == 0) {                    // Caesar
+                if (SKey[0] == '\0')      errorText = "Enter a numeric shift key.";
+                else if (std::string(SKey).find_first_not_of("0123456789") != std::string::npos)
+                    errorText = "Shift key must be an integer.";
+            }
+            else if (selectedCipher == 1) {                    // S-DES
+                if (strlen(EKey) != 10)   errorText = "S-DES key must be 10 bits.";
+                else if (std::string(EKey).find_first_not_of("01") != std::string::npos)
+                    errorText = "S-DES key can contain only 0 or 1.";
+            }
 
-            if (selectedCipher == 0)
-            {
-                // Caesar
-                int shift = 0;
-                if (strlen(SKey) > 0)
+            if (!errorText.empty()) {          // show error next frame
+                wantError = true;
+            }
+            else {
+                // ---- run cipher ----------------------------------------------
+                output.clear();
+                switch (selectedCipher)
                 {
-                    try { shift = std::stoi(SKey); }
-                    catch (...) { shift = 0; }
+                case 0: {
+                    int shift = std::stoi(SKey);
+                    if (doDecrypt) shift = -shift;
+                    Ceaser_Cipher(Input, shift);
+                } break;
+                case 1: SDES_Cipher(Input, EKey, doDecrypt); break;
+                case 2: MorseCode_Cipher(Input, doDecrypt);  break;
                 }
-                // If decrypt mode, we can just do negative shift
-                if (doDecrypt) shift = -shift;
-                Ceaser_Cipher(Input, shift);
-            }
-            else if (selectedCipher == 1)
-            {
-                // S-DES
-                // If no key provided, default to something
-                if (strlen(EKey) == 0) strcpy(EKey, "1010000010");
-                // For simplicity, we ignore DKey or unify them 
-                // But let's use EKey if DKey is empty
-                if (strlen(DKey) == 0) strcpy(DKey, EKey);
-
-                // We'll run S-DES with EKey (or DKey). 
-                // Typically they are the same for real S-DES. 
-                // 'doDecrypt' changes subkey order inside the function.
-                SDES_Cipher(Input, EKey, doDecrypt);
-            }
-            else if (selectedCipher == 2)
-            {
-                // Morse
-                MorseCode_Cipher(Input, doDecrypt);
+                ShowResults = true;
+                if (g_CopyOnEncrypt)                     
+                    ImGui::SetClipboardText(output.c_str());
             }
         }
 
-        ImGui::SeparatorText("File mode");
+        if (ShowResults)
+        {
+            ImGui::SeparatorText("Result");
+            ImGui::InputTextMultiline("##out", output.data(),
+                output.size() + 1,
+                ImVec2(-FLT_MIN, 120),
+                ImGuiInputTextFlags_ReadOnly);
+        }
+        EndPane(); ImGui::SameLine();
+
+        //--------------------  (B) TREE PANE  -----------------------------------
+        BeginFixedPane("##TreePane", 240.f);
+
+        ImGui::Text("Select Cipher:"); ImGui::Separator();
+        if (ImGui::RadioButton("Caesar Cipher", selectedCipher == 0)) selectedCipher = 0;
+        ImGui::SameLine(); HelpMarker(
+            "A simple substitution cipher.\n"
+            "Shifts each alphabet letter by a fixed amount.\n"
+            "Only affects A–Z or a–z characters."
+        );
+
+        if (ImGui::RadioButton("S-DES (Simplified DES)", selectedCipher == 1)) selectedCipher = 1;
+        ImGui::SameLine(); HelpMarker(
+            "A simplified, educational version of the DES algorithm.\n"
+            "Encrypts 8-bit blocks using a 10-bit binary key.\n"
+            "Applies two Feistel rounds with permutations."
+        );
+        if (ImGui::RadioButton("Morse Code", selectedCipher == 2)) selectedCipher = 2;
+        ImGui::SameLine(); HelpMarker(
+            "Encodes letters into dots and dashes.\n"
+            "Originally used in telegraph systems.\n"
+            "Supports both encoding and decoding."
+        );
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::Spacing();
+        ImGui::SeparatorText("Quick quide");
+
+        ImGui::TextWrapped(
+            "Use the left panel to encrypt or decrypt individual text inputs.\n"
+            "Use the right panel to work with entire text files.\n\n"
+            "First, select a cipher from the center panel. Then proceed to encrypt or decrypt "
+            "your content using either the left (text input) or right (file processing) panel."
+        );
+        EndPane(); ImGui::SameLine();
+
+        //--------------------  (C) FILE PANE  -----------------------------------
+        ImGui::BeginChild("##FilePane", ImVec2(0, 0), true);
+
+        ImGui::Text("File encrypt / decrypt");
 
         if (ImGui::Button("Load text file…"))
         {
@@ -327,85 +322,101 @@ namespace CipherP {
                 std::ifstream fin(inputFilePath, std::ios::binary);
                 fileContent.assign((std::istreambuf_iterator<char>(fin)),
                     std::istreambuf_iterator<char>());
-                fin.close();
                 fileLoaded = true;
                 fileProcessed = false;
             }
         }
-
         ImGui::SameLine();
         ImGui::TextDisabled("%s", fileLoaded ? inputFilePath : "no file");
 
-        if (fileLoaded)
+        // ----- RUN-ON-FILE button with validation ------------------------------
+        if (ImGui::Button("Run on file"))
         {
-            if (ImGui::Button("Encrypt / Decrypt file"))
-            {
-                output.clear();
+            errorText.clear();
 
-                // --- run the selected cipher on fileContent ----------------------
+            if (!fileLoaded)
+                errorText = "No file loaded.";
+            else if (selectedCipher == -1)
+                errorText = "Choose a cipher first.";
+            else if (selectedCipher == 0) {
+                if (SKey[0] == '\0')  errorText = "Enter a numeric shift key.";
+                else if (std::string(SKey).find_first_not_of("0123456789") != std::string::npos)
+                    errorText = "Shift key must be an integer.";
+            }
+            else if (selectedCipher == 1) {
+                if (strlen(EKey) != 10)   errorText = "S-DES key must be 10 bits.";
+                else if (std::string(EKey).find_first_not_of("01") != std::string::npos)
+                    errorText = "S-DES key can contain only 0 or 1.";
+            }
+
+            if (!errorText.empty()) {
+                wantError = true;
+            }
+            else {
+                // ---- run cipher on file --------------------------------------
+                output.clear();
                 switch (selectedCipher)
                 {
-                case 0: {  // Caesar
-                    int shift = 0;
-                    try { shift = std::stoi(SKey); }
-                    catch (...) {}
+                case 0: {
+                    int shift = std::stoi(SKey);
                     if (doDecrypt) shift = -shift;
                     Ceaser_Cipher(fileContent.c_str(), shift);
                 } break;
-
-                case 1: {  // S‑DES
-                    if (strlen(EKey) == 0) strcpy(EKey, "1010000010");
-                    SDES_Cipher(fileContent.c_str(), EKey, doDecrypt);
-                } break;
-
-                case 2: {  // Morse
-                    MorseCode_Cipher(fileContent.c_str(), doDecrypt);
-                } break;
+                case 1: SDES_Cipher(fileContent.c_str(), EKey, doDecrypt); break;
+                case 2: MorseCode_Cipher(fileContent.c_str(), doDecrypt);  break;
                 }
 
-                // --- auto‑build output path  -------------------------------------
+                // auto-save
                 namespace fs = std::filesystem;
                 fs::path inPath(inputFilePath);
-                std::string suffix = doDecrypt ? "_dec" : "_enc";
+                std::string suf = doDecrypt ? "_dec" : "_enc";
                 fs::path outPath = inPath.parent_path() /
-                    (inPath.stem().string() + suffix + inPath.extension().string());
-
+                    (inPath.stem().string() + suf + inPath.extension().string());
                 strcpy(outputFilePath, outPath.string().c_str());
-
-                // --- write file ---------------------------------------------------
-                std::ofstream fout(outPath, std::ios::binary);
-                fout << output;
-                fout.close();
-
+                std::ofstream(outPath, std::ios::binary) << output;
+                if (g_CopyOnEncrypt)
+                    ImGui::SetClipboardText(output.c_str());
                 fileProcessed = true;
+                
             }
         }
 
         if (fileProcessed)
         {
-            if (ImGui::Button("Open output file"))
+            ImGui::Separator();
+            ImGui::TextDisabled("Saved → %s", outputFilePath);
+            if (ImGui::SmallButton("Open output"))
                 ShellExecuteA(0, 0, outputFilePath, 0, 0, SW_SHOW);
-
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", outputFilePath);
         }
 
-        // Show result
-        if (ShowResults)
+        ImGui::EndChild();   // File pane
+
+        //-----------------------------------------------------------------
+        // 4.  ERROR POPUP  (modal)
+        //-----------------------------------------------------------------
+        if (ImGui::BeginPopupModal("Input Error", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Text("Result: %s", output.c_str());
+            ImGui::TextWrapped("%s", errorText.c_str());
+            ImGui::Separator();
+            if (ImGui::Button("OK", ImVec2(120, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
         }
 
-        // Performance stats
+        //-----------------------------------------------------------------
+        // 5.  Footer
+        //-----------------------------------------------------------------
         ImGuiIO& io = ImGui::GetIO();
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::Spacing();
-            ImGui::Text("Made by the best programmer in the world \n\nZain Alamri");
+        ImGui::Separator();
+        ImGui::Text("avg %.3f ms/frame (%.1f FPS)",
+            1000.0f / io.Framerate, io.Framerate);
+        ImGui::SameLine();
+        ImGui::TextDisabled("| made by Zain Alamri");
 
-           
-
-         ImGui::End();
+        ImGui::End();   // main window
     }
+
 
     // ------------------------------------------------------------------------------------
     // Caesar Cipher
@@ -764,16 +775,24 @@ namespace CipherP {
                 unsigned char plain = static_cast<unsigned char>(text[i]);
                 unsigned char enc = sdesEncryptByte(plain, sk1, sk2, false);
 
-                /* convert byte → “01010101” */
-                char bin[9];
-                for (int b = 7; b >= 0; --b)
-                    bin[7 - b] = ((enc >> b) & 1) ? '1' : '0';
-                bin[8] = '\0';
-
-                output += bin;
-                output += ' ';                 // visual separator
+                if (g_ShowBinary)
+                {
+                    // 8-bit block → "01010101"
+                    char bin[9];
+                    for (int b = 7; b >= 0; --b)
+                        bin[7 - b] = ((enc >> b) & 1) ? '1' : '0';
+                    bin[8] = '\0';
+                    output += bin;
+                }
+                else
+                {
+                    // decimal byte e.g. "172"
+                    output += std::to_string(enc);
+                }
+                output += ' ';                 // separator for readability
             }
         }
+
         // ---- DECRYPT ----------------------------------------------------------
         else
         {
