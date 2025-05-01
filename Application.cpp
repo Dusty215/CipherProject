@@ -29,8 +29,8 @@ namespace CipherP
     static std::string fileOutput;
     enum IO_Mode { IO_LETTERS = 0, IO_DEC = 1, IO_BIN = 2 };
 
-    static IO_Mode g_SDES_InMode = IO_BIN;   // default  binary → …
-    static IO_Mode g_SDES_OutMode = IO_BIN;   // default        … → binary
+    static IO_Mode g_SDES_InMode = IO_BIN;   // default binary 
+    static IO_Mode g_SDES_OutMode = IO_BIN;   // default binary
 
     // safe, non-throwing atoi
     static bool ParseShiftSafe(const char* txt, int& outVal)
