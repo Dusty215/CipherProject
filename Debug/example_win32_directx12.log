@@ -1,6 +1,6 @@
 ﻿  Application.cpp
-C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(296,17): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(68,17): warning C4505: 'CipherP::SaveFileDialog': unreferenced function with internal linkage has been removed
+C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(295,17): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(67,17): warning C4505: 'CipherP::SaveFileDialog': unreferenced function with internal linkage has been removed
   example_win32_directx12.vcxproj -> C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Debug\example_win32_directx12.exe
   'pwsh.exe' is not recognized as an internal or external command,
   operable program or batch file.

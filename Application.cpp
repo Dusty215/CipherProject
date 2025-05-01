@@ -11,15 +11,14 @@
 #include <windows.h>
 #include <random>   
 #include <fstream>
-#include <commdlg.h>      // common file dialogs
+#include <commdlg.h>      
 #include <filesystem>
-#include <fstream> // for automatic “*_enc.txt” naming (C++17)
 
 namespace fs = std::filesystem;
 namespace CipherP
 {
     /*─────────────────────  forward decls  ─────────────────────*/
-    void Ceaser_Cipher(const char*, int);
+    void Caeser_Cipher(const char*, int);
     void SDES_Cipher(const char*, const char*, bool);
     void MorseCode_Cipher(const char*, bool = false);
 
@@ -116,7 +115,7 @@ namespace CipherP
         ImGui::Begin("Encryption Algorithm", nullptr,
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar);
 
-        /*──────── menu bar (trimmed) ───────*/
+        /*──────── menu bar ───────*/
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("Settings")) {
                 ImGui::Checkbox("Copy result to clipboard", &g_CopyOnEncrypt);
@@ -134,10 +133,10 @@ namespace CipherP
                 {
                     ShellExecuteA(0, 0, "https://www.taibahu.edu.sa/Pages/EN/Sector/SectorPage.aspx?ID=155&PageId=30", 0, 0, SW_SHOW);
                 }
-                ImGui::EndMenu(); // <--- THIS was missing
+                ImGui::EndMenu(); 
             }
 
-            ImGui::EndMenuBar(); // <--- should be AFTER all menus
+            ImGui::EndMenuBar(); 
         }
         /*──────── main scrollable area ─────*/
         ImGui::BeginChild("##MainContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
@@ -202,7 +201,7 @@ namespace CipherP
                 switch (cipher) {
                 case 0: {
                     int sh; ParseShiftSafe(SKey, sh); if (doDecrypt) sh = -sh;
-                    Ceaser_Cipher(Input, sh);
+                    Caeser_Cipher(Input, sh);
                 } break;
                 case 1: SDES_Cipher(Input, EKey, doDecrypt); break;
                 case 2: MorseCode_Cipher(Input, doDecrypt); break;
@@ -267,7 +266,7 @@ namespace CipherP
         if (ImGui::Button("Run on file"))
         {
             err.clear();
-            /* … validation stays exactly as before … */
+          
 
             if (!err.empty())  wantErr = true;
             else {
@@ -281,7 +280,7 @@ namespace CipherP
                 {
                 case 0: {
                     int sh; ParseShiftSafe(SKey, sh); if (doDecrypt) sh = -sh;
-                    Ceaser_Cipher(fileBuf.c_str(), sh);
+                    Caeser_Cipher(fileBuf.c_str(), sh);
                 }                break;
                 case 1:   SDES_Cipher(fileBuf.c_str(), EKey, doDecrypt);      break;
                 case 2:   MorseCode_Cipher(fileBuf.c_str(), doDecrypt);        break;
@@ -335,7 +334,7 @@ namespace CipherP
     // ------------------------------------------------------------------------------------
     // Caesar Cipher
     // ------------------------------------------------------------------------------------
-    void Ceaser_Cipher(const char* text, int shift)
+    void Caeser_Cipher(const char* text, int shift)
     {
         output.clear();
 
@@ -802,4 +801,4 @@ namespace CipherP
     }
 
 
-} // namespace CipherP
+} 
