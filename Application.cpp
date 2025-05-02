@@ -139,7 +139,7 @@ namespace CipherP
             ImGui::EndMenuBar(); 
         }
         /*──────── main scrollable area ─────*/
-        ImGui::BeginChild("##MainContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+        ImGui::BeginChild("##MainContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true , ImGuiWindowFlags_NoResize);
         //center pop up error messages
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
