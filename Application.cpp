@@ -19,7 +19,10 @@ namespace CipherP
 {
     /*─────────────────────  forward decls  ─────────────────────*/
     void Caeser_Cipher(const char*, int);
-    void SDES_Cipher(const char*, const char*, bool);
+    void DES_Cipher(const char* text,
+        const char* hexKey,   // 16 hex chars (64‑bit key)
+        bool decrypt);
+
     void MorseCode_Cipher(const char*, bool = false);
 
     /*─────────────────────  globals / helpers  ─────────────────*/
@@ -27,10 +30,10 @@ namespace CipherP
     static std::mt19937 rng{ static_cast<unsigned>(::time(nullptr)) };
     static std::string  output;
     static std::string fileOutput;
-    enum IO_Mode { IO_LETTERS = 0, IO_DEC = 1, IO_BIN = 2 };
-
-    static IO_Mode g_SDES_InMode = IO_BIN;   // default binary 
-    static IO_Mode g_SDES_OutMode = IO_BIN;   // default binary
+   
+    enum class IO_Mode2 { IO_TEXT = 0, IO_HEX, IO_BIN };
+    static IO_Mode2 g_DES_InMode = IO_Mode2::IO_TEXT;
+    static IO_Mode2 g_DES_OutMode = IO_Mode2::IO_HEX;
 
     // safe, non-throwing atoi
     static bool ParseShiftSafe(const char* txt, int& outVal)
@@ -133,92 +136,128 @@ namespace CipherP
                 {
                     ShellExecuteA(0, 0, "https://www.taibahu.edu.sa/Pages/EN/Sector/SectorPage.aspx?ID=155&PageId=30", 0, 0, SW_SHOW);
                 }
-                ImGui::EndMenu(); 
+                ImGui::EndMenu();
             }
 
-            ImGui::EndMenuBar(); 
+            ImGui::EndMenuBar();
         }
         /*──────── main scrollable area ─────*/
-        ImGui::BeginChild("##MainContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true , ImGuiWindowFlags_NoResize);
+        ImGui::BeginChild("##MainContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true, ImGuiWindowFlags_NoResize);
         //center pop up error messages
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         /*================  (A) TEXT PANE  ================*/
         BeginFixedPane("##TextPane", 380.f);
 
-        ImGuiInputTextFlags wrapFlags = ImGuiInputTextFlags_CallbackEdit | ImGuiInputTextFlags_AllowTabInput ;
+        ImGuiInputTextFlags wrapFlags = ImGuiInputTextFlags_CallbackEdit | ImGuiInputTextFlags_AllowTabInput;
 
+        /* ----------------------- input box ---------------------------- */
         ImGui::Text("Plain / cipher text");
-        ImGui::InputTextMultiline("##txt",                 
+        ImGui::InputTextMultiline("##txt",
             Input, IM_ARRAYSIZE(Input),
             ImVec2(-FLT_MIN, 140),
-            wrapFlags, AutoWrapCallback);                    
+            wrapFlags, AutoWrapCallback);
 
         ImGui::Checkbox("Decrypt mode", &doDecrypt);
         ImGui::Separator();
 
-        if (cipher == 0) {                                // Caesar
-            ImGui::InputText("Shift", SKey, IM_ARRAYSIZE(SKey), ImGuiInputTextFlags_CharsDecimal);
-            
-            if (ImGui::SmallButton("Randomize key##C")) {
+        /* ----------‑‑ cipher–specific widgets (always visible) -------- */
+        if (cipher == 0)                       /* Caesar */
+        {
+            ImGui::InputText("Shift", SKey, IM_ARRAYSIZE(SKey),
+                ImGuiInputTextFlags_CharsDecimal);
+
+            if (ImGui::SmallButton("Randomize key##C"))
+            {
                 int r = (rng() % 25) + 1; _itoa_s(r, SKey, 10);
             }
         }
-        else if (cipher == 1) {                          // S-DES
-            ImGui::InputText("10-bit key", EKey, IM_ARRAYSIZE(EKey));
-            
-            if (ImGui::SmallButton("Randomize key##S")) {
-                for (int i = 0; i < 10; ++i) EKey[i] = (rng() & 1) ? '1' : '0';
-                EKey[10] = '\0';
+        else if (cipher == 1)                  /* DES */
+        {
+            ImGui::InputText("16 hex key", EKey, IM_ARRAYSIZE(EKey),
+                ImGuiInputTextFlags_CharsHexadecimal |
+                ImGuiInputTextFlags_CharsUppercase);
+
+            if (ImGui::SmallButton("Randomize key##D"))
+            {
+                for (int i = 0; i < 16; ++i)
+                    EKey[i] = "0123456789ABCDEF"[rng() & 0xF];
+                EKey[16] = '\0';
             }
-            // ── input   (Letters / Decimal / Binary) ───────────────────────
-            static const char* inModes[] = { "Letters", "Decimal", "Binary" };
-            ImGui::Combo("Input is", (int*)&g_SDES_InMode,
-                inModes, IM_ARRAYSIZE(inModes));
 
-            // ── output  (Decimal / Binary   *ONLY* ) ───────────────────────
-            static const char* outModes[] = { "Decimal", "Binary" };
-            int outIdx = (g_SDES_OutMode == IO_BIN) ? 1 : 0;
-            if (ImGui::Combo("Output as", &outIdx, outModes, IM_ARRAYSIZE(outModes)))
-                g_SDES_OutMode = (outIdx == 1) ? IO_BIN : IO_DEC;
+            static const char* inModes[] = { "ASCII", "Hex", "Binary" };
+            static const char* outModes[] = { "Hex",   "Binary" };
+
+            ImGui::Combo("Input is",
+                (int*)&g_DES_InMode, inModes, IM_ARRAYSIZE(inModes));
+
+            int outIdx = (g_DES_OutMode == IO_Mode2::IO_BIN) ? 1 : 0;
+            if (ImGui::Combo("Output as", &outIdx,
+                outModes, IM_ARRAYSIZE(outModes)))
+                g_DES_OutMode = (outIdx == 1) ? IO_Mode2::IO_BIN
+                : IO_Mode2::IO_HEX;
         }
-
-        /*---- run on text --------------------------------------------------*/
-        if (ImGui::Button("Run on text")) {
+       
+        /* ----------------------- run button --------------------------- */
+        if (ImGui::Button("Run on text"))
+        {
             err.clear();
+
             if (cipher == -1)              err = "Choose a cipher first.";
             else if (*Input == '\0')       err = "Input text is empty.";
-            else if (cipher == 0) { int d; if (!ParseShiftSafe(SKey, d)) err = "Shift must be integer."; }
-            else if (cipher == 1) {
-                if (strlen(EKey) != 10) err = "S-DES key must be 10 bits.";
-                else if (std::string(EKey).find_first_not_of("01") != std::string::npos)
-                    err = "S-DES key can contain only 0 or 1.";
+            else if (cipher == 0)          // Caesar validation
+            {
+                int dummy;
+                if (!ParseShiftSafe(SKey, dummy)) err = "Shift must be integer.";
+            }
+            else if (cipher == 1)          // DES validation
+            {
+                if (strlen(EKey) != 16)          err = "Key must be 16 hex chars.";
+                else if (std::string(EKey).find_first_not_of(
+                    "0123456789ABCDEFabcdef") != std::string::npos)
+                    err = "Key may contain only 0‑9 / A‑F.";
+
+                // you could also validate ASCII/hex/binary text here if you wish
             }
 
-            if (!err.empty()) wantErr = true;
-            else {
+            /* ----‑‑ dispatch cipher only when there is no error ---- */
+            if (!err.empty())
+                wantErr = true;
+            else
+            {
                 output.clear();
-                switch (cipher) {
-                case 0: {
-                    int sh; ParseShiftSafe(SKey, sh); if (doDecrypt) sh = -sh;
+                switch (cipher)
+                {
+                case 0:
+                {
+                    int sh; ParseShiftSafe(SKey, sh);
+                    if (doDecrypt) sh = -sh;
                     Caeser_Cipher(Input, sh);
-                } break;
-                case 1: SDES_Cipher(Input, EKey, doDecrypt); break;
-                case 2: MorseCode_Cipher(Input, doDecrypt); break;
+                    break;
+                } 
+
+                case 1:
+                    DES_Cipher(Input, EKey, doDecrypt);
+                    break;
+
+                case 2:
+                    MorseCode_Cipher(Input, doDecrypt);
+                    break;
                 }
                 showRes = true;
                 if (g_CopyOnEncrypt) ImGui::SetClipboardText(output.c_str());
             }
         }
 
-        if (showRes) {
+        /* ----------------------- result box --------------------------- */
+        if (showRes)
+        {
             ImGui::SeparatorText("Result");
-            ImGui::InputTextMultiline("##out",                
+            ImGui::InputTextMultiline("##out",
                 output.data(), output.size() + 1,
                 ImVec2(-FLT_MIN, 120),
-                wrapFlags | ImGuiInputTextFlags_ReadOnly         // read-only
-                ,
-                AutoWrapCallback);                            
+                wrapFlags | ImGuiInputTextFlags_ReadOnly,
+                AutoWrapCallback);
         }
         EndPane(); ImGui::SameLine();
 
@@ -227,8 +266,8 @@ namespace CipherP
         ImGui::Text("Select cipher"); ImGui::Separator();
         if (ImGui::RadioButton("Caesar", cipher == 0)) cipher = 0;
         ImGui::SameLine(); HelpMarker("A substitution cipher that shifts each letter in the text by a fixed number of positions in the alphabet. Only alphabetic characters are affected.");
-        if (ImGui::RadioButton("S-DES", cipher == 1))  cipher = 1;
-        ImGui::SameLine(); HelpMarker("A teaching version of the DES algorithm. Uses a 10-bit key to encrypt 8-bit blocks through two Feistel rounds with permutations.");
+        if (ImGui::RadioButton("DES", cipher == 1)) cipher = 1;
+        ImGui::SameLine(); HelpMarker("Classic DES  64 bit blocks, 16 rounds. Key: 16 hex chars (64‑bit, parity ignored).");
         if (ImGui::RadioButton("Morse", cipher == 2))  cipher = 2;
         ImGui::SameLine(); HelpMarker("Encodes letters and numbers into sequences of dots and dashes. Originally used in telegraph communication. Supports both encoding and decoding.");
         ImGui::Spacing();
@@ -261,47 +300,83 @@ namespace CipherP
         }
         ImGui::SameLine();
         ImGui::TextDisabled("%s", fileLoaded ? inPath : "no file");
-
-       /*───────────── RUN ON FILE ─────────────*/
+        /*───────────── RUN ON FILE ─────────────*/
         if (ImGui::Button("Run on file"))
         {
             err.clear();
-          
 
-            if (!err.empty())  wantErr = true;
+            /* --- validate -------------------------------------------------------- */
+            if (!fileLoaded)
+                err = "No file loaded.";
+            else if (cipher == -1)
+                err = "Choose a cipher first.";
+            else if (cipher == 0)                     // Caesar
+            {
+                int v;
+                if (!ParseShiftSafe(SKey, v))
+                    err = "Shift must be an integer.";
+            }
+            else if (cipher == 1)                     // DES
+            {
+                if (strlen(EKey) != 16)
+                    err = "DES key must be 16 hex chars.";
+                else if (std::string(EKey).find_first_not_of(
+                    "0123456789ABCDEFabcdef") != std::string::npos)
+                    err = "Key may contain only 0‑9 A‑F.";
+            }
+
+            /* --- abort on validation error --------------------------------------- */
+            if (!err.empty()) {
+                wantErr = true;          // show the popup later
+            }
             else {
-                /*── 1.  preserve whatever is currently displayed in the text pane ──*/
-                std::string  prevOutput = output;   // make a copy
-                bool         prevShow = showRes;
 
-                /*── 2.  run cipher → output   (re-using existing functions) ───────*/
+
+                /*── 1.  preserve current text‑pane contents ─────────────────────────── */
+                std::string prevOutput = output;
+                bool        prevShow = showRes;
+
+                /*── 2.  run cipher on the loaded buffer ─────────────────────────────── */
                 output.clear();
+
                 switch (cipher)
                 {
-                case 0: {
-                    int sh; ParseShiftSafe(SKey, sh); if (doDecrypt) sh = -sh;
+                case 0: {                                // Caesar
+                    int sh; ParseShiftSafe(SKey, sh);
+                    if (doDecrypt) sh = -sh;
                     Caeser_Cipher(fileBuf.c_str(), sh);
-                }                break;
-                case 1:   SDES_Cipher(fileBuf.c_str(), EKey, doDecrypt);      break;
-                case 2:   MorseCode_Cipher(fileBuf.c_str(), doDecrypt);        break;
+                    break;                               // <-- needed!
                 }
-                fileOutput = output;           // keep a *separate* copy for the file
+                case 1:                                  // DES
+                    DES_Cipher(fileBuf.c_str(), EKey, doDecrypt);
+                    break;
 
-                /*── 3.  write to disk & clipboard ─────────────────────────────────*/
+                case 2:                                  // Morse
+                    MorseCode_Cipher(fileBuf.c_str(), doDecrypt);
+                    break;
+                }
+
+                fileOutput = output;                     // copy for disk
+
+                /*── 3.  write to disk & clipboard ───────────────────────────────────── */
                 fs::path p(inPath);
                 std::string suf = doDecrypt ? "_dec" : "_enc";
-                fs::path out = p.parent_path() /
-                    (p.stem().string() + suf + p.extension().string());
-                strcpy(outPath, out.string().c_str());
+                fs::path out = p.parent_path()
+                    / (p.stem().string() + suf + p.extension().string());
+
+                strncpy(outPath, out.string().c_str(), MAX_PATH - 1);
+                outPath[MAX_PATH - 1] = '\0';
+
                 std::ofstream(out, std::ios::binary) << fileOutput;
                 if (g_CopyOnEncrypt) ImGui::SetClipboardText(fileOutput.c_str());
                 fileDone = true;
 
-                /*── 4.  restore text-pane data so it does NOT show file result ───*/
+                /*── 4.  restore text‑pane so screen doesn’t change ──────────────────── */
                 output = std::move(prevOutput);
                 showRes = prevShow;
             }
         }
+
 
         /*──────── done message + open button ───────*/
         if (fileDone) {
@@ -447,358 +522,243 @@ namespace CipherP
 
 
 
-    // ------------------------------------------------------------------------------------
-    // S-DES (Simplified DES) Implementation
-    // ------------------------------------------------------------------------------------
-    // This is a *teaching cipher* that uses a 10-bit key and 8-bit blocks,
-    // performing 2 Feistel rounds. We can do encryption or decryption by reversing subkey order.
-    //
-    // Steps:
-    // 1. Key schedule: produce two 8-bit subkeys from the 10-bit key
-    // 2. Initial Permutation (IP)
-    // 3. Round 1 (fK) with subkey1, then swap halves
-    // 4. Round 2 (fK) with subkey2
-    // 5. Final Permutation (IP^-1)
-    // For decryption, just swap the order of subkey1, subkey2.
-    //
-    // If the input text is >1 byte, we process each byte in turn (ECB-like).
-    //
-    // IMPORTANT: Real DES is 64 bits + 56-bit key + 16 rounds + more complexity.
-    // This code is purely for demonstration, not secure.
-    // ------------------------------------------------------------------------------------
-
-    // ---------- 8-bit permutation ---------------------------------
-    static unsigned char permute8(unsigned char in, const int* tbl, int n)
-    {
-        unsigned char out = 0;
-        for (int i = 0; i < n; ++i)
-            out |= bitL<8>(in, tbl[i]) << (n - 1 - i);
-        return out;
-    }
-
-    // ---------- 10-bit permutation --------------------------------
-    static unsigned short permute10(unsigned short in, const int* tbl, int n)
-    {
-        unsigned short out = 0;
-        for (int i = 0; i < n; ++i)
-            out |= bitL<10>(in, tbl[i]) << (n - 1 - i);
-        return out;
-    }
+    // ⇩⇩==============================================================⇩⇩
+//                        DES IMPLEMENTATION
+//               64‑bit ECB, 16 Feistel rounds (FIPS‑46‑3)
+// -----------------------------------------------------------------
+//  • Key  : 16 hex chars  (64 bits – parity bits ignored)
+//  • Input: blocks given as ASCII / Hex / Binary   (chosen in UI)
+//  • Output: Hex or Binary (chosen in UI)
+//  • Global controls: g_DES_InMode  ,  g_DES_OutMode   (IO_Mode2)
+// ================================================================⇩⇩
 
 
-    // Left shift for 5 bits (half of 10-bit key)
-    static unsigned short leftShift5bits(unsigned short val, int shifts)
-    {
-        // We only want the lower 5 bits
-        // e.g. if val=abcde in binary, shifting by 1 => bcdea
-        unsigned short mask = 0x1F; // 5 bits (0001 1111)
-        unsigned short out = ((val << shifts) & mask) | (val >> (5 - shifts));
-        return out;
-    }
+// ───── helper enum comes from your header ─────
+// enum class IO_Mode2 { IO_TEXT = 0, IO_HEX , IO_BIN };
 
-    // Key schedule (2 subkeys)
-    // P10, split into left/right 5 bits, shift, P8 => subkey1
-    // shift again, P8 => subkey2
-    void generateSubKeys(unsigned short key10, unsigned char& subkey1, unsigned char& subkey2)
-    {
-        // P10 table (bit indices, right->left in typical references),
-        // but we’ll label in ascending order for code. 
-        // This is standard for S-DES:
-        const int P10[10] = { 2, 4, 1, 6, 3, 9, 0, 8, 7, 5 };
+    namespace {
 
-        // P8 table (we pick 8 bits out of the 10)
-        const int P8[8] = { 5, 2, 6, 3, 7, 4, 9, 8 };
+        /* ─────────────── DES tables (FIPS‑46‑3) ─────────────── */
+        const int IP[64] = {
+         57,49,41,33,25,17, 9, 1, 59,51,43,35,27,19,11, 3,
+         61,53,45,37,29,21,13, 5, 63,55,47,39,31,23,15, 7,
+         56,48,40,32,24,16, 8, 0, 58,50,42,34,26,18,10, 2,
+         60,52,44,36,28,20,12, 4, 62,54,46,38,30,22,14, 6 };
 
-        // Step 1: permute by P10
-        unsigned short p10_out = permute10(key10, P10, 10);
+        const int FP[64] = {
+         39, 7,47,15,55,23,63,31, 38, 6,46,14,54,22,62,30,
+         37, 5,45,13,53,21,61,29, 36, 4,44,12,52,20,60,28,
+         35, 3,43,11,51,19,59,27, 34, 2,42,10,50,18,58,26,
+         33, 1,41, 9,49,17,57,25, 32, 0,40, 8,48,16,56,24 };
 
-        // Step 2: split into left 5 bits, right 5 bits
-        unsigned short left5 = (p10_out >> 5) & 0x1F;   // top 5 bits
-        unsigned short right5 = p10_out & 0x1F;         // bottom 5 bits
+        const int E[48] = {
+         31, 0, 1, 2, 3, 4, 3, 4, 5, 6, 7, 8,
+          7, 8, 9,10,11,12,11,12,13,14,15,16,
+         15,16,17,18,19,20,19,20,21,22,23,24,
+         23,24,25,26,27,28,27,28,29,30,31, 0 };
 
-        // Step 3: left shift by 1 to get subkey1
-        left5 = leftShift5bits(left5, 1);
-        right5 = leftShift5bits(right5, 1);
+        const int P[32] = { 15, 6,19,20,28,11,27,16, 0,14,22,25,4,17,30, 9,
+                             1, 7,23,13,31,26, 2, 8,18,12,29, 5,21,10, 3,24 };
 
-        // Combine
-        unsigned short combined = (left5 << 5) | (right5);
+        const int PC1[56] = {
+         56,48,40,32,24,16, 8, 0,57,49,41,33,25,17,
+          9, 1,58,50,42,34,26,18,10, 2,59,51,43,35,
+         62,54,46,38,30,22,14, 6,61,53,45,37,29,21,
+         13, 5,60,52,44,36,28,20,12, 4,27,19,11, 3 };
 
-        // Step 4: apply P8 => subkey1
-        // We'll store subkey as 8 bits
-        unsigned char sk1 = 0;
-        for (int i = 0; i < 8; ++i)
-        {
-            int b = bitL<10>(combined, P8[i]);   // MSB-first read
-            sk1 |= b << (7 - i);                   // MSB-first write
-        }
+        const int PC2[48] = {
+         13,16,10,23, 0, 4, 2,27,14, 5,20, 9,
+         22,18,11, 3,25, 7,15, 6,26,19,12, 1,
+         40,51,30,36,46,54,29,39,50,44,32,47,
+         43,48,38,55,33,52,45,41,49,35,28,31 };
 
+        const int SHIFTS[16] = { 1,1,2,2,2,2,2,2, 1,2,2,2,2,2,2,1 };
 
-        // Next shift by 2 (from original 1 shift or from the new state?)
-        left5 = leftShift5bits(left5, 2);
-        right5 = leftShift5bits(right5, 2);
-        combined = (left5 << 5) | (right5);
-
-        // Apply P8 => subkey2
-        unsigned char sk2 = 0;
-        for (int i = 0; i < 8; ++i)
-        {
-            int b = bitL<10>(combined, P8[i]);
-            sk2 |= b << (7 - i);
-        }
-
-        subkey1 = sk1;
-        subkey2 = sk2;
-    }
-
-    // The fK function for each round:
-    //   split 8 bits => left (4 bits), right (4 bits)
-    //   F(right, subkey) => 4 bits
-    //   left XOR F => new left
-    //   right => new right
-    // so out = (newLeft << 4) | newRight
-    // We'll define F() separately
-    static unsigned char sdesRound(unsigned char in, unsigned char subkey)
-    {
-        // Split
-        unsigned char left4 = (in >> 4) & 0x0F;
-        unsigned char right4 = in & 0x0F;
-
-        // Feistel
-        unsigned char fOut = 0; // F(right4, subkey)
-
-        // E/P (expand 4 bits to 8 bits)
-        static const int EP[8] = { 3,0,1,2, 1,2,3,0 };
-        unsigned char epVal = 0;
-        for (int i = 0; i < 8; ++i)
-        {
-            int bit = bitL<4>(right4, EP[i]);      // ← use MSB-indexed helper
-            epVal |= bit << (7 - i);                 // keep table order
-        }
-
-        // XOR with subkey
-        epVal ^= subkey;
-
-        // Now epVal is 8 bits: left half => s0, right half => s1
-        unsigned char leftHalf = (epVal >> 4) & 0x0F;
-        unsigned char rightHalf = epVal & 0x0F;
-
-        // S-boxes (S0, S1) for S-DES
-        // Each is 4x4, indexing with [row, col]
-        // row = (b2 << 1) | b3, col = (b1 << 1) | b0
-        static const unsigned char S0[4][4] = {
-            {1, 0, 3, 2},
-            {3, 2, 1, 0},
-            {0, 2, 1, 3},
-            {3, 1, 3, 2}
-        };
-        static const unsigned char S1[4][4] = {
-            {0, 1, 2, 3},
-            {2, 0, 1, 3},
-            {3, 0, 1, 0},
-            {2, 1, 0, 3}
+        const int SBOX[8][4][16] = {
+            /* S1 */{{14,4,13,1,2,15,11,8,3,10,6,12,5,9,0,7},
+                     {0,15,7,4,14,2,13,1,10,6,12,11,9,5,3,8},
+                     {4,1,14,8,13,6,2,11,15,12,9,7,3,10,5,0},
+                     {15,12,8,2,4,9,1,7,5,11,3,14,10,0,6,13}},
+                     /* S2 */{{15,1,8,14,6,11,3,4,9,7,2,13,12,0,5,10},
+                              {3,13,4,7,15,2,8,14,12,0,1,10,6,9,11,5},
+                              {0,14,7,11,10,4,13,1,5,8,12,6,9,3,2,15},
+                              {13,8,10,1,3,15,4,2,11,6,7,12,0,5,14,9}},
+                              /* S3 */{{10,0,9,14,6,3,15,5,1,13,12,7,11,4,2,8},
+                                       {13,7,0,9,3,4,6,10,2,8,5,14,12,11,15,1},
+                                       {13,6,4,9,8,15,3,0,11,1,2,12,5,10,14,7},
+                                       {1,10,13,0,6,9,8,7,4,15,14,3,11,5,2,12}},
+                                       /* S4 */{{7,13,14,3,0,6,9,10,1,2,8,5,11,12,4,15},
+                                                {13,8,11,5,6,15,0,3,4,7,2,12,1,10,14,9},
+                                                {10,6,9,0,12,11,7,13,15,1,3,14,5,2,8,4},
+                                                {3,15,0,6,10,1,13,8,9,4,5,11,12,7,2,14}},
+                                                /* S5 */{{2,12,4,1,7,10,11,6,8,5,3,15,13,0,14,9},
+                                                         {14,11,2,12,4,7,13,1,5,0,15,10,3,9,8,6},
+                                                         {4,2,1,11,10,13,7,8,15,9,12,5,6,3,0,14},
+                                                         {11,8,12,7,1,14,2,13,6,15,0,9,10,4,5,3}},
+                                                         /* S6 */{{12,1,10,15,9,2,6,8,0,13,3,4,14,7,5,11},
+                                                                  {10,15,4,2,7,12,9,5,6,1,13,14,0,11,3,8},
+                                                                  {9,14,15,5,2,8,12,3,7,0,4,10,1,13,11,6},
+                                                                  {4,3,2,12,9,5,15,10,11,14,1,7,6,0,8,13}},
+                                                                  /* S7 */{{4,11,2,14,15,0,8,13,3,12,9,7,5,10,6,1},
+                                                                           {13,0,11,7,4,9,1,10,14,3,5,12,2,15,8,6},
+                                                                           {1,4,11,13,12,3,7,14,10,15,6,8,0,5,9,2},
+                                                                           {6,11,13,8,1,4,10,7,9,5,0,15,14,2,3,12}},
+                                                                           /* S8 */{{13,2,8,4,6,15,11,1,10,9,3,14,5,0,12,7},
+                                                                                    {1,15,13,8,10,3,7,4,12,5,6,11,0,14,9,2},
+                                                                                    {7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8},
+                                                                                    {2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11}}
         };
 
-        // leftHalf => bits (b3 b2 b1 b0). We interpret (b3,b0) as row, (b2,b1) as col
-        auto sboxLookup = [&](unsigned char half, const unsigned char box[4][4]) {
-            unsigned char row = ((half & 0b1000) >> 2) | (half & 0b0001);
-            unsigned char col = (half & 0b0110) >> 1;
-            return box[row][col];
-            };
+        /* -------------------------------------------------------------- */
+        inline int  getBit64(uint64_t v, int pos) { return (v >> (63 - pos)) & 1ULL; }
+        inline void setBit64(uint64_t& v, int pos) { v |= 1ULL << (63 - pos); }
 
-        unsigned char s0Val = sboxLookup(leftHalf, S0); // 2 bits
-        unsigned char s1Val = sboxLookup(rightHalf, S1); // 2 bits
-
-        // Combine s0Val, s1Val into 4 bits
-        unsigned char combinedS = (unsigned char)((s0Val << 2) | s1Val);
-
-        // P4
-        static const int P4[4] = { 1,3,2,0 };
-        unsigned char p4Val = 0;
-        for (int i = 0; i < 4; ++i)
+        /* generic permutation Nout←Nin */
+        template<int Nout, int Nin>
+        uint64_t permute(uint64_t in, const int* tbl)
         {
-            int bit = bitL<4>(combinedS, P4[i]);   // ← ditto
-            p4Val |= bit << (3 - i);
-        }
-        fOut = p4Val;
-
-        // Now XOR with left4
-        unsigned char newLeft = left4 ^ fOut;
-        // Right stays the same
-        unsigned char newRight = right4;
-
-        // Combine back
-        unsigned char outVal = (newLeft << 4) | newRight;
-        return outVal;
-    }
-
-    // Initial Permutation
-    static const int IP[8] = { 1, 5, 2, 0, 3, 7, 4, 6 };
-    // Final Permutation
-    static const int IP_1[8] = { 3, 0, 2, 4, 6, 1, 7, 5 };
-
-    // S-DES main routine (encrypt or decrypt a single 8-bit block)
-    static unsigned char sdesEncryptByte(unsigned char block, unsigned char sk1, unsigned char sk2, bool decrypt)
-    {
-        // 1) IP
-        block = permute8(block, IP, 8);
-
-        // 2) Round 1
-        if (!decrypt)
-        {
-            block = sdesRound(block, sk1);
-        }
-        else
-        {
-            block = sdesRound(block, sk2); // reverse order if decrypt
+            uint64_t out = 0;
+            for (int i = 0; i < Nout; ++i)
+                if (getBit64(in, tbl[i])) setBit64(out, i);
+            return out;
         }
 
-        // 3) Swap left, right
-        //   left = block >> 4, right = block & 0xF
-        //   out = (right << 4) | left
-        unsigned char left4 = (block >> 4) & 0x0F;
-        unsigned char right4 = block & 0x0F;
-        block = (right4 << 4) | left4;
+        /* rotate 28‑bit value left by s */
+        uint32_t rot28(uint32_t x, int s) { return ((x << s) | (x >> (28 - s))) & 0x0FFFFFFF; }
 
-        // 4) Round 2
-        if (!decrypt)
+        /* Feistel f(R,Ki)  – R:32, Ki:48 → 32 */
+        uint32_t feistel(uint32_t R, uint64_t Ki)
         {
-            block = sdesRound(block, sk2);
+            /* E expansion */
+            uint64_t E48 = 0;
+            for (int i = 0; i < 48; ++i)
+                if ((R >> (32 - 1 - E[i])) & 1) E48 |= 1ULL << (47 - i);
+
+            E48 ^= Ki;                              // XOR with sub‑key
+
+            /* S‑boxes */
+            uint32_t out32 = 0;
+            for (int b = 0; b < 8; ++b)
+            {
+                uint8_t chunk = (E48 >> (42 - 6 * b)) & 0x3F;
+                int row = ((chunk & 0x20) >> 4) | (chunk & 0x01);
+                int col = (chunk >> 1) & 0x0F;
+                uint8_t s = SBOX[b][row][col];
+                out32 |= uint32_t(s) << (28 - 4 * b);
+            }
+
+            /* P permutation */
+            uint32_t P32 = 0;
+            for (int i = 0; i < 32; ++i)
+                if ((out32 >> (32 - 1 - P[i])) & 1) P32 |= 1u << (31 - i);
+            return P32;
         }
-        else
+
+        /* produce 16 sub‑keys (48 bits each) */
+        void makeSubKeys(const char* hexKey, uint64_t sub[16])
         {
-            block = sdesRound(block, sk1);
+            uint64_t k64 = std::strtoull(hexKey, nullptr, 16);
+            uint64_t k56 = permute<56, 64>(k64, PC1);
+
+            uint32_t C = uint32_t(k56 >> 28);
+            uint32_t D = uint32_t(k56 & 0x0FFFFFFF);
+
+            for (int r = 0; r < 16; ++r)
+            {
+                C = rot28(C, SHIFTS[r]);
+                D = rot28(D, SHIFTS[r]);
+                uint64_t CD = (uint64_t(C) << 28) | D;
+                sub[r] = permute<48, 56>(CD, PC2);
+            }
         }
 
-        // 5) FP
-        block = permute8(block, IP_1, 8);
+        /* -------- helpers: parse / format blocks -------- */
+        std::vector<uint64_t> parseBlocks(const char* txt, IO_Mode2 mode)
+        {
+            std::vector<uint64_t> v;
+            std::istringstream iss(txt);
+            std::string tok;
+            while (iss >> tok)
+            {
+                if (mode == IO_Mode2::IO_TEXT)
+                {
+                    for (const char* p = txt; *p; ++p)
+                        v.push_back(static_cast<uint64_t>(static_cast<unsigned char>(*p)) << 56); // pad to 64‑bit
+                }
+                else if (mode == IO_Mode2::IO_BIN)
+                {
+                    if (tok.size() != 64) continue;
+                    uint64_t b = 0;
+                    for (char c : tok) { b <<= 1; if (c == '1') b |= 1; }
+                    v.push_back(b);
+                }
+                else                    // hex
+                {
+                    uint64_t b = std::stoull(tok, nullptr, 16);
+                    v.push_back(b);
+                }
+            }
+            return v;
+        }
+        std::string fmtBlocks(const std::vector<uint64_t>& v, IO_Mode2 mode)
+        {
+            std::ostringstream oss;
+            for (size_t i = 0; i < v.size(); ++i)
+            {
+                if (mode == IO_Mode2::IO_BIN)
+                {
+                    for (int b = 63; b >= 0; --b) oss << (((v[i] >> b) & 1) ? '1' : '0');
+                }
+                else
+                {
+                    oss << std::hex << std::uppercase << std::setw(16) << std::setfill('0') << v[i];
+                }
+                if (i + 1 != v.size()) oss << ' ';
+            }
+            return oss.str();
+        }
 
-        return block;
-    }
+    } //‑‑ anon namespace
 
-    // The public function that processes an entire string, one byte at a time
-    void SDES_Cipher(const char* text, const char* key, bool decrypt)
+
+
+    /*────────────────────  PUBLIC API  ───────────────────*/
+    void DES_Cipher(const char* text, const char* hexKey, bool decrypt)
     {
         output.clear();
 
-        // ---- parse 10‑bit key -------------------------------------------------
-        unsigned short key10 = 0;
+        /* 1. sub‑keys */
+        uint64_t sub[16]; makeSubKeys(hexKey, sub);
+
+        /* 2. parse input */
+        IO_Mode2 parseMode = g_DES_InMode;
+
+        std::vector<uint64_t> blocks = parseBlocks(text, parseMode);
+        if (blocks.empty()) { output = "(no valid blocks)"; return; }
+
+        /* 3. process each block */
+        std::vector<uint64_t> res; res.reserve(blocks.size());
+
+        for (uint64_t blk : blocks)
         {
-            int len = (int)strlen(key);
-            for (int i = 0; i < 10; ++i) {
-                key10 <<= 1;
-                if (i < len && key[i] == '1') key10 |= 1;
+            uint64_t B = permute<64, 64>(blk, IP);          // IP
+            uint32_t L = uint32_t(B >> 32);
+            uint32_t R = uint32_t(B & 0xFFFFFFFF);
+
+            for (int r = 0; r < 16; ++r)
+            {
+                uint32_t tmp = R;
+                uint64_t k = decrypt ? sub[15 - r] : sub[r];
+                R = L ^ feistel(R, k);
+                L = tmp;
             }
+            uint64_t preFP = (uint64_t)L << 32 | R;         
+            uint64_t C = permute<64, 64>(preFP, FP);    // FP
+            res.push_back(C);
         }
 
-        // ---- build the two round keys ----------------------------------------
-        unsigned char sk1 = 0, sk2 = 0;
-        generateSubKeys(key10, sk1, sk2);
-
-        // ---- ENCRYPT ----------------------------------------------------------
-        if (!decrypt)
-        {
-            /*──────── 1.  convert INPUT to raw bytes vector ―────*/
-            std::vector<unsigned char> bytes;
-
-            if (g_SDES_InMode == IO_LETTERS)
-            {
-                for (const char* p = text; *p; ++p) bytes.push_back((unsigned char)*p);
-            }
-            else
-            {
-                std::istringstream iss(text);
-                std::string token;
-                while (iss >> token)
-                {
-                    if (g_SDES_InMode == IO_DEC)           // decimal byte
-                    {
-                        int v = std::stoi(token);
-                        bytes.push_back((unsigned char)(v & 0xFF));
-                    }
-                    else                                   // binary “01001100”
-                    {
-                        if (token.size() != 8) continue;
-                        unsigned char v = 0;
-                        for (char c : token) { v <<= 1; if (c == '1') v |= 1; }
-                        bytes.push_back(v);
-                    }
-                }
-            }
-
-            /*──────── 2.  run S-DES on each byte ―──────────────*/
-            std::vector<unsigned char> encBytes;
-            encBytes.reserve(bytes.size());
-            for (unsigned char b : bytes)
-                encBytes.push_back(sdesEncryptByte(b, sk1, sk2, false));
-
-            /*──────── 3.  format OUTPUT according to OutMode ―─*/
-            std::ostringstream oss;
-            for (size_t i = 0; i < encBytes.size(); ++i)
-            {
-                unsigned char v = encBytes[i];
-                if (g_SDES_OutMode == IO_LETTERS)
-                    oss << (char)v;
-                else if (g_SDES_OutMode == IO_DEC)
-                    oss << (int)v;
-                else /* binary */
-                {
-                    for (int b = 7; b >= 0; --b) oss << (((v >> b) & 1) ? '1' : '0');
-                }
-                if (i + 1 != encBytes.size()) oss << ' ';   // separator
-            }
-            output = oss.str();
-        }
-
-        // ---- DECRYPT ----------------------------------------------------------
-        else
-        {
-            /*──────── 1.  parse INPUT into cipher-bytes vector ―*/
-            std::vector<unsigned char> cBytes;
-
-            if (g_SDES_InMode == IO_LETTERS)
-            {
-                for (const char* p = text; *p; ++p) cBytes.push_back((unsigned char)*p);
-            }
-            else
-            {
-                std::istringstream iss(text);
-                std::string token;
-                while (iss >> token)
-                {
-                    if (g_SDES_InMode == IO_DEC)
-                    {
-                        int v = std::stoi(token);
-                        cBytes.push_back((unsigned char)(v & 0xFF));
-                    }
-                    else
-                    {
-                        if (token.size() != 8) continue;
-                        unsigned char v = 0;
-                        for (char c : token) { v <<= 1; if (c == '1') v |= 1; }
-                        cBytes.push_back(v);
-                    }
-                }
-            }
-
-            /*──────── 2.  decrypt each byte ―──────────────────*/
-            std::ostringstream oss;
-            for (size_t i = 0; i < cBytes.size(); ++i)
-            {
-                unsigned char dec = sdesEncryptByte(cBytes[i], sk1, sk2, true);
-
-                if (g_SDES_OutMode == IO_LETTERS)
-                    oss << (char)dec;
-                else if (g_SDES_OutMode == IO_DEC)
-                    oss << (int)dec;
-                else
-                {
-                    for (int b = 7; b >= 0; --b) oss << (((dec >> b) & 1) ? '1' : '0');
-                }
-                if (i + 1 != cBytes.size()) oss << ' ';
-            }
-            output = oss.str();
-        }
+        /* 4. format output */
+        output = fmtBlocks(res, g_DES_OutMode);
     }
-
-
+   
 } 
