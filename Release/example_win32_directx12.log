@@ -1,11 +1,11 @@
 ﻿  Application.cpp
-C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(367,17): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(646,27): warning C4244: 'initializing': conversion from 'const int' to 'uint8_t', possible loss of data
-C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(70,17): warning C4505: 'CipherP::SaveFileDialog': unreferenced function with internal linkage has been removed
+C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(366,17): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(642,27): warning C4244: 'initializing': conversion from 'const int' to 'uint8_t', possible loss of data
+C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Application.cpp(64,17): warning C4505: 'CipherP::SaveFileDialog': unreferenced function with internal linkage has been removed
   Generating code
-  0 of 2867 functions ( 0.0%) were compiled, the rest were copied from previous compilation.
+  1 of 2868 functions (<0.1%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    0 functions had inline decision re-evaluated but remain unchanged
+    53 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
   example_win32_directx12.vcxproj -> C:\Users\Marcu\source\repos\CipherProject\examples\example_win32_directx12\Release\example_win32_directx12.exe
   'pwsh.exe' is not recognized as an internal or external command,

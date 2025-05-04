@@ -55,12 +55,6 @@ namespace CipherP
         }
     }
 
-    template<int N>  // N = 8 or 10
-    static inline int bitL(unsigned int v, int i)
-    {
-        return (v >> (N - 1 - i)) & 1;
-    }
-
     /*─────────────────────  File-dialog helpers  ───────────────*/
     static bool OpenFileDialog(char* p, DWORD sz) {
         OPENFILENAMEA o{ sizeof(o) };
@@ -111,18 +105,18 @@ namespace CipherP
         static char inPath[MAX_PATH]{}, outPath[MAX_PATH]{};
         static std::string fileBuf;
         static bool wantErr = false; static std::string err;
-
+        
         /*──────── window + dock ────────────*/
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
         ImGui::SetNextWindowSize(ImVec2(1000, 640), ImGuiCond_FirstUseEver);
         ImGui::Begin("Encryption Algorithm", nullptr,
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar);
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoMove);
 
         /*──────── menu bar ───────*/
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("Settings")) {
                 ImGui::Checkbox("Copy result to clipboard", &g_CopyOnEncrypt);
-                ImGui::EndMenu(); // correct
+                ImGui::EndMenu(); 
             }
 
             if (ImGui::BeginMenu("Help"))
@@ -141,11 +135,15 @@ namespace CipherP
 
             ImGui::EndMenuBar();
         }
-        /*──────── main scrollable area ─────*/
+
+       
+        /*──────── main area ─────*/
         ImGui::BeginChild("##MainContent", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true, ImGuiWindowFlags_NoResize);
+
         //center pop up error messages
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
         /*================  (A) TEXT PANE  ================*/
         BeginFixedPane("##TextPane", 380.f);
 
@@ -161,7 +159,7 @@ namespace CipherP
         ImGui::Checkbox("Decrypt mode", &doDecrypt);
         ImGui::Separator();
 
-        /* ----------‑‑ cipher–specific widgets (always visible) -------- */
+        /* ----------‑‑ cipher–specific widgets -------- */
         if (cipher == 0)                       /* Caesar */
         {
             ImGui::InputText("Shift", SKey, IM_ARRAYSIZE(SKey),
@@ -185,6 +183,7 @@ namespace CipherP
                 EKey[16] = '\0';
             }
 
+            /* ---------- input/output types for DES ---------- */
             static const char* inModes[] = { "ASCII", "Hex", "Binary" };
             static const char* outModes[] = { "Hex",   "Binary" };
 
@@ -217,7 +216,7 @@ namespace CipherP
                     "0123456789ABCDEFabcdef") != std::string::npos)
                     err = "Key may contain only 0‑9 / A‑F.";
 
-                // you could also validate ASCII/hex/binary text here if you wish
+              
             }
 
             /* ----‑‑ dispatch cipher only when there is no error ---- */
@@ -345,7 +344,7 @@ namespace CipherP
                     int sh; ParseShiftSafe(SKey, sh);
                     if (doDecrypt) sh = -sh;
                     Caeser_Cipher(fileBuf.c_str(), sh);
-                    break;                               // <-- needed!
+                    break;                               
                 }
                 case 1:                                  // DES
                     DES_Cipher(fileBuf.c_str(), EKey, doDecrypt);
@@ -367,7 +366,7 @@ namespace CipherP
                 strncpy(outPath, out.string().c_str(), MAX_PATH - 1);
                 outPath[MAX_PATH - 1] = '\0';
 
-                std::ofstream(out, std::ios::binary) << fileOutput;
+                std::ofstream(out, std::ios::binary) << fileOutput; // file created 
                 if (g_CopyOnEncrypt) ImGui::SetClipboardText(fileOutput.c_str());
                 fileDone = true;
 
@@ -420,7 +419,7 @@ namespace CipherP
             {
                 bool isUpper = (c >= 'A' && c <= 'Z');
                 char base = isUpper ? 'A' : 'a';
-
+                // ASCI substracing 
                 int alphaIndex = c - base;
                 int shifted = (alphaIndex + shift) % 26;
                 if (shifted < 0) shifted += 26;
@@ -430,7 +429,7 @@ namespace CipherP
         }
     }
 
-    // ------------------------------------------------------------------------------------
+  // ------------------------------------------------------------------------------------
   // Morse Code Cipher  (encode & decode)
   // ------------------------------------------------------------------------------------
     void MorseCode_Cipher(const char* text, bool decrypt)
@@ -469,7 +468,7 @@ namespace CipherP
                     if (!firstToken) output += " /";
                     firstToken = false;                  // next letter still needs blank
                 }
-                else        // punctuation → copy verbatim with a preceding space
+                else        // punctuation → copy verbatim with a preceding space like (!?)
                 {
                     if (!firstToken) output.push_back(' ');
                     output.push_back(c);
@@ -522,7 +521,7 @@ namespace CipherP
 
 
 
-    // ⇩⇩==============================================================⇩⇩
+//     ============================================================
 //                        DES IMPLEMENTATION
 //               64‑bit ECB, 16 Feistel rounds (FIPS‑46‑3)
 // -----------------------------------------------------------------
@@ -530,11 +529,8 @@ namespace CipherP
 //  • Input: blocks given as ASCII / Hex / Binary   (chosen in UI)
 //  • Output: Hex or Binary (chosen in UI)
 //  • Global controls: g_DES_InMode  ,  g_DES_OutMode   (IO_Mode2)
-// ================================================================⇩⇩
+// ======================================================================
 
-
-// ───── helper enum comes from your header ─────
-// enum class IO_Mode2 { IO_TEXT = 0, IO_HEX , IO_BIN };
 
     namespace {
 
@@ -694,6 +690,10 @@ namespace CipherP
                 }
                 else                    // hex
                 {
+
+                    if (tok.size() > 16)
+                        throw std::runtime_error("Each hex block must be 16 hex digits");
+
                     uint64_t b = std::stoull(tok, nullptr, 16);
                     v.push_back(b);
                 }
